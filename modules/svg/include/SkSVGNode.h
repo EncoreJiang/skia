@@ -143,6 +143,7 @@ public:
     SVG_PRES_ATTR(StrokeMiterLimit         , SkSVGNumberType, true)
     SVG_PRES_ATTR(StrokeOpacity            , SkSVGNumberType, true)
     SVG_PRES_ATTR(StrokeWidth              , SkSVGLength    , true)
+    SVG_PRES_ATTR(PaintOrder               , SkSVGPaintOrder, true)
     SVG_PRES_ATTR(TextAnchor               , SkSVGTextAnchor, true)
     SVG_PRES_ATTR(Visibility               , SkSVGVisibility, true)
 

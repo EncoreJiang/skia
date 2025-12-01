@@ -15,6 +15,7 @@
 #include "src/base/SkUTF.h"
 #include <limits.h>
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <locale>
 #include <string>
@@ -116,14 +117,29 @@ public:
         SkASSERT(fCurrent < fEnd);
         SkASSERT(!fLanguage || this->endOfCurrentRun() <= fLanguage->endOfCurrentRun());
         SkUnichar u = utf8_next(&fCurrent, fEnd);
+        printf("[FontSelection] FontMgrRunIterator::consume: processing char U+%04X %s\n", u, fCurrent);
+        
+        SkString primaryTypefaceName;
+        if (fFont.getTypeface()) {
+            fFont.getTypeface()->getFamilyName(&primaryTypefaceName);
+        }
+        
         // If the starting typeface can handle this character, use it.
         if (fFont.unicharToGlyph(u)) {
             fCurrentFont = &fFont;
+            printf("[FontSelection] FontMgrRunIterator::consume: char U+%04X found in primary font '%s'\n",
+                   u, primaryTypefaceName.c_str());
         // If the current fallback can handle this character, use it.
         } else if (fFallbackFont.getTypeface() && fFallbackFont.unicharToGlyph(u)) {
             fCurrentFont = &fFallbackFont;
+            SkString fallbackTypefaceName;
+            fFallbackFont.getTypeface()->getFamilyName(&fallbackTypefaceName);
+            printf("[FontSelection] FontMgrRunIterator::consume: char U+%04X found in cached fallback font '%s'\n",
+                   u, fallbackTypefaceName.c_str());
         // If not, try to find a fallback typeface
         } else {
+            printf("[FontSelection] FontMgrRunIterator::consume: char U+%04X not found in primary font '%s', searching fallback\n",
+                   u, primaryTypefaceName.c_str());
             const char* language = fLanguage ? fLanguage->currentLanguage() : nullptr;
             int languageCount = fLanguage ? 1 : 0;
             sk_sp<SkTypeface> candidate(fFallbackMgr->matchFamilyStyleCharacter(
@@ -133,6 +149,7 @@ public:
                 fCurrentFont = &fFallbackFont;
             } else {
                 fCurrentFont = &fFont;
+                printf("[FontSelection] FontMgrRunIterator::consume: no fallback font found for char U+%04X, using primary font\n", u);
             }
         }
 
@@ -148,13 +165,25 @@ public:
 
             // End run if current typeface does not have this character and some other font does.
             if (!fCurrentFont->unicharToGlyph(u)) {
+                SkString currentTypefaceName;
+                if (fCurrentFont->getTypeface()) {
+                    fCurrentFont->getTypeface()->getFamilyName(&currentTypefaceName);
+                }
+                printf("[FontSelection] FontMgrRunIterator::consume: char U+%04X not found in current font '%s', checking for new fallback\n",
+                       u, currentTypefaceName.c_str());
                 const char* language = fLanguage ? fLanguage->currentLanguage() : nullptr;
                 int languageCount = fLanguage ? 1 : 0;
                 sk_sp<SkTypeface> candidate(fFallbackMgr->matchFamilyStyleCharacter(
                     fRequestName, fRequestStyle, &language, languageCount, u));
                 if (candidate) {
+                    SkString candidateTypefaceName;
+                    candidate->getFamilyName(&candidateTypefaceName);
+                    printf("[FontSelection] FontMgrRunIterator::consume: found new fallback font '%s' (uniqueID=%u) for char U+%04X, ending run\n",
+                           candidateTypefaceName.c_str(), candidate->uniqueID(), u);
                     fCurrent = prev;
                     return;
+                } else {
+                    printf("[FontSelection] FontMgrRunIterator::consume: no fallback font found for char U+%04X, continuing with current font\n", u);
                 }
             }
         }

@@ -24,13 +24,26 @@ void SkSVGShape::onRender(const SkSVGRenderContext& ctx) const {
     const auto fillPaint = ctx.fillPaint(),
              strokePaint = ctx.strokePaint();
 
-    // TODO: this approach forces duplicate geometry resolution in onDraw(); refactor to avoid.
-    if (fillPaint.has_value()) {
-        this->onDraw(ctx.canvas(), ctx.lengthContext(), *fillPaint, fillType);
+    // Get paint-order, defaulting to fill -> stroke -> markers if not specified
+    const auto& paintOrder = ctx.presentationContext().fInherited.fPaintOrder;
+    std::array<SkSVGPaintOrder::Component, 3> order = {
+        SkSVGPaintOrder::Component::kFill,
+        SkSVGPaintOrder::Component::kStroke,
+        SkSVGPaintOrder::Component::kMarkers
+    };
+    
+    if (paintOrder.isValue() && paintOrder->type() != SkSVGPaintOrder::Type::kInherit) {
+        order = paintOrder->order();
     }
 
-    if (strokePaint.has_value()) {
-        this->onDraw(ctx.canvas(), ctx.lengthContext(), *strokePaint, fillType);
+    // Render according to paint-order
+    for (const auto& component : order) {
+        if (component == SkSVGPaintOrder::Component::kFill && fillPaint.has_value()) {
+            this->onDraw(ctx.canvas(), ctx.lengthContext(), *fillPaint, fillType);
+        } else if (component == SkSVGPaintOrder::Component::kStroke && strokePaint.has_value()) {
+            this->onDraw(ctx.canvas(), ctx.lengthContext(), *strokePaint, fillType);
+        }
+        // Markers are not handled in SkSVGShape
     }
 }
 

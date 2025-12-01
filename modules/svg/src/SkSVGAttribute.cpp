@@ -25,6 +25,7 @@ SkSVGPresentationAttributes SkSVGPresentationAttributes::MakeInitial() {
     result.fStrokeMiterLimit.set(SkSVGNumberType(4));
     result.fStrokeOpacity.set(SkSVGNumberType(1));
     result.fStrokeWidth.set(SkSVGLength(1));
+    result.fPaintOrder.set(SkSVGPaintOrder(SkSVGPaintOrder::Type::kNormal)); // Default: fill -> stroke -> markers
 
     result.fVisibility.set(SkSVGVisibility(SkSVGVisibility::Type::kVisible));
 

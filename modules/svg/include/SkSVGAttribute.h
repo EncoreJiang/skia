@@ -33,6 +33,7 @@ enum class SkSVGAttribute {
     kHeight,
     kHref,
     kOpacity,
+    kPaintOrder,
     kPoints,
     kPreserveAspectRatio,
     kR,  // <circle>, <radialGradient>: radius
@@ -81,6 +82,7 @@ struct SkSVGPresentationAttributes {
     SkSVGProperty<SkSVGNumberType, true> fStrokeMiterLimit;
     SkSVGProperty<SkSVGNumberType, true> fStrokeOpacity;
     SkSVGProperty<SkSVGLength    , true> fStrokeWidth;
+    SkSVGProperty<SkSVGPaintOrder, true> fPaintOrder;
 
     SkSVGProperty<SkSVGVisibility, true> fVisibility;
 

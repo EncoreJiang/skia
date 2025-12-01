@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -93,13 +94,22 @@ static SkFont ResolveFont(const SkSVGRenderContext& ctx) {
             ctx.lengthContext().resolve(ctx.presentationContext().fInherited.fFontSize->size(),
                                         SkSVGLengthContext::LengthType::kVertical);
 
+    printf("[FontSelection] ResolveFont: family='%s', style=(weight=%d, width=%d, slant=%d), size=%.2f\n",
+           family.c_str(), style.weight(), style.width(), style.slant(), size);
+
     // TODO: we likely want matchFamilyStyle here, but switching away from legacyMakeTypeface
     // changes all the results when using the default fontmgr.
     auto tf = ctx.fontMgr()->legacyMakeTypeface(family.c_str(), style);
     if (!tf) {
+        printf("[FontSelection] ResolveFont: primary font lookup failed for family='%s', trying default\n", family.c_str());
         tf = ctx.fontMgr()->legacyMakeTypeface(nullptr, style);
     }
     SkASSERT(tf);
+    if (tf) {
+        SkString typefaceName;
+        tf->getFamilyName(&typefaceName);
+        printf("[FontSelection] ResolveFont: selected typeface='%s' (uniqueID=%u)\n", typefaceName.c_str(), tf->uniqueID());
+    }
     SkFont font(std::move(tf), size);
     font.setHinting(SkFontHinting::kNone);
     font.setSubpixel(true);
@@ -243,11 +253,20 @@ void SkSVGTextContext::shapePendingBuffer(const SkSVGRenderContext& ctx, const S
     const char* utf8 = fShapeBuffer.fUtf8.data();
     size_t utf8Bytes = fShapeBuffer.fUtf8.size();
 
+    SkString typefaceName;
+    if (font.getTypeface()) {
+        font.getTypeface()->getFamilyName(&typefaceName);
+    }
+    printf("[FontSelection] shapePendingBuffer: text length=%zu, initial font='%s' (uniqueID=%u)\n",
+           utf8Bytes, typefaceName.c_str(), font.getTypeface() ? font.getTypeface()->uniqueID() : 0);
+
     std::unique_ptr<SkShaper::FontRunIterator> font_runs =
             SkShaper::MakeFontMgrRunIterator(utf8, utf8Bytes, font, ctx.fontMgr());
     if (!font_runs) {
+        printf("[FontSelection] shapePendingBuffer: MakeFontMgrRunIterator returned null\n");
         return;
     }
+    printf("[FontSelection] shapePendingBuffer: FontRunIterator created successfully\n");
     if (!fForcePrimitiveShaping) {
         // Try to use the passed in shaping callbacks to shape, for example, using harfbuzz and ICU.
         const uint8_t defaultLTR = 0;
@@ -619,15 +638,33 @@ void SkSVGTextLiteral::onShapeText(const SkSVGRenderContext& ctx, SkSVGTextConte
 }
 
 void SkSVGText::onRender(const SkSVGRenderContext& ctx) const {
-    const SkSVGTextContext::ShapedTextCallback render_text = [](const SkSVGRenderContext& ctx,
+    // Get paint-order, defaulting to fill -> stroke -> markers if not specified
+    const auto& paintOrder = ctx.presentationContext().fInherited.fPaintOrder;
+    std::array<SkSVGPaintOrder::Component, 3> order = {
+        SkSVGPaintOrder::Component::kFill,
+        SkSVGPaintOrder::Component::kStroke,
+        SkSVGPaintOrder::Component::kMarkers
+    };
+    
+    if (paintOrder.isValue() && paintOrder->type() != SkSVGPaintOrder::Type::kInherit) {
+        order = paintOrder->order();
+    }
+    printf("paintOrder: %d\n", order[0]);
+    printf("paintOrder: %d\n", order[1]);
+    printf("paintOrder: %d\n", order[2]);
+
+    const SkSVGTextContext::ShapedTextCallback render_text = [order](const SkSVGRenderContext& ctx,
                                                                 const sk_sp<SkTextBlob>& blob,
                                                                 const SkPaint* fill,
                                                                 const SkPaint* stroke) {
-        if (fill) {
-            ctx.canvas()->drawTextBlob(blob, 0, 0, *fill);
-        }
-        if (stroke) {
-            ctx.canvas()->drawTextBlob(blob, 0, 0, *stroke);
+        // Render according to paint-order
+        for (const auto& component : order) {
+            if (component == SkSVGPaintOrder::Component::kFill && fill) {
+                ctx.canvas()->drawTextBlob(blob, 0, 0, *fill);
+            } else if (component == SkSVGPaintOrder::Component::kStroke && stroke) {
+                ctx.canvas()->drawTextBlob(blob, 0, 0, *stroke);
+            }
+            // Markers are not handled in text rendering
         }
     };
 
@@ -638,6 +675,7 @@ void SkSVGText::onRender(const SkSVGRenderContext& ctx) const {
 }
 
 SkRect SkSVGText::onTransformableObjectBoundingBox(const SkSVGRenderContext& ctx) const {
+    printf("onTransformableObjectBoundingBox\n");
     SkRect bounds = SkRect::MakeEmpty();
 
     const SkSVGTextContext::ShapedTextCallback compute_bounds =

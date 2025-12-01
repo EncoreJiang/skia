@@ -25,6 +25,12 @@
 #include "include/ports/SkFontMgr_empty.h"
 #endif
 
+#if defined(SK_FONTMGR_FONTCONFIG_AVAILABLE) && defined(SK_TYPEFACE_FACTORY_FREETYPE)
+#include "include/ports/SkFontMgr_fontconfig.h"
+#include "include/ports/SkFontScanner_FreeType.h"
+#endif
+
+
 static DEFINE_string2(input , i, nullptr, "Input SVG file.");
 static DEFINE_string2(output, o, nullptr, "Output PNG file.");
 
@@ -50,12 +56,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+
     // If necessary, clients should use a font manager that would load fonts from the system.
-#if defined(SK_BUILD_FOR_MAC)
-    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_CoreText(nullptr);
-#else
-    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_Custom_Empty();
+    sk_sp<SkFontMgr> fontMgr;
+#if defined(SK_FONTMGR_FONTCONFIG_AVAILABLE) && defined(SK_TYPEFACE_FACTORY_FREETYPE)
+    fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+#elif defined(SK_FONTMGR_CORETEXT_AVAILABLE)
+    fontMgr = SkFontMgr_New_CoreText(nullptr);
 #endif
+    if (!fontMgr) {
+        printf("No Font Manager configured\n");
+        return 1;
+    }
 
     CodecUtils::RegisterAllAvailable();
 

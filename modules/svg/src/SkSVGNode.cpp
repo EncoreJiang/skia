@@ -130,6 +130,7 @@ bool SkSVGNode::parseAndSetAttribute(const char* n, const char* v) {
            || PARSE_AND_SET("stroke-miterlimit"          , StrokeMiterLimit)
            || PARSE_AND_SET("stroke-opacity"             , StrokeOpacity)
            || PARSE_AND_SET("stroke-width"               , StrokeWidth)
+           || PARSE_AND_SET("paint-order"                 , PaintOrder)
            || PARSE_AND_SET("text-anchor"                , TextAnchor)
            || PARSE_AND_SET("visibility"                 , Visibility);
 

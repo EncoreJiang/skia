@@ -836,6 +836,77 @@ bool SkSVGAttributeParser::parse(SkSVGObjectBoundingBoxUnits* objectBoundingBoxU
     return parsedValue && this->parseEOSToken();
 }
 
+// https://www.w3.org/TR/SVG2/painting.html#PaintOrderProperty
+template <>
+bool SkSVGAttributeParser::parse(SkSVGPaintOrder* paintOrder) {
+    // Default order: fill -> stroke -> markers
+    std::array<SkSVGPaintOrder::Component, 3> order = {
+        SkSVGPaintOrder::Component::kFill,
+        SkSVGPaintOrder::Component::kStroke,
+        SkSVGPaintOrder::Component::kMarkers
+    };
+    
+    this->parseWSToken();
+    
+    // Check for "inherit" keyword
+    if (this->parseExpectedStringToken("inherit")) {
+        this->parseWSToken();
+        if (this->parseEOSToken()) {
+            *paintOrder = SkSVGPaintOrder(SkSVGPaintOrder::Type::kInherit);
+            return true;
+        }
+        return false;
+    }
+    
+    bool parsedValue = false;
+    
+    // Check for "normal" keyword (default order)
+    if (this->parseExpectedStringToken("normal")) {
+        parsedValue = true;
+    } else {
+        // Parse explicit order: one or more of "fill", "stroke", "markers"
+        std::array<bool, 3> found = {false, false, false};
+        int pos = 0;
+        
+        while (pos < 3 && !this->parseEOSToken()) {
+            this->parseWSToken();
+            
+            if (this->parseExpectedStringToken("fill") && !found[0]) {
+                order[pos++] = SkSVGPaintOrder::Component::kFill;
+                found[0] = true;
+                parsedValue = true;
+            } else if (this->parseExpectedStringToken("stroke") && !found[1]) {
+                order[pos++] = SkSVGPaintOrder::Component::kStroke;
+                found[1] = true;
+                parsedValue = true;
+            } else if (this->parseExpectedStringToken("markers") && !found[2]) {
+                order[pos++] = SkSVGPaintOrder::Component::kMarkers;
+                found[2] = true;
+                parsedValue = true;
+            } else {
+                break;
+            }
+            
+            this->parseWSToken();
+        }
+        
+        // Fill in any missing components in default order
+        for (int i = 0; i < 3 && pos < 3; ++i) {
+            if (!found[i]) {
+                order[pos++] = static_cast<SkSVGPaintOrder::Component>(i);
+            }
+        }
+    }
+    
+    this->parseWSToken();
+    if (parsedValue && this->parseEOSToken()) {
+        *paintOrder = SkSVGPaintOrder(order);
+        return true;
+    }
+    
+    return false;
+}
+
 // https://www.w3.org/TR/SVG11/shapes.html#PolygonElementPointsAttribute
 template <>
 bool SkSVGAttributeParser::parse(SkSVGPointsType* points) {

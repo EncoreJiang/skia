@@ -19,6 +19,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 
+#include <array>
 #include <optional>
 #include <vector>
 
@@ -365,6 +366,51 @@ public:
 
 private:
     Type fType;
+};
+
+class SK_API SkSVGPaintOrder {
+public:
+    enum class Component {
+        kFill,
+        kStroke,
+        kMarkers,
+    };
+
+    enum class Type {
+        kNormal,  // Default order: fill -> stroke -> markers
+        kInherit,
+        kValue,   // Custom order specified
+    };
+
+    constexpr SkSVGPaintOrder() : fType(Type::kInherit) {}
+    
+    explicit SkSVGPaintOrder(Type t) : fType(t) {
+        if (fType == Type::kNormal) {
+            fOrder = {Component::kFill, Component::kStroke, Component::kMarkers};
+        }
+    }
+    
+    explicit SkSVGPaintOrder(std::array<Component, 3> order) 
+        : fType(Type::kValue), fOrder(order) {}
+
+    SkSVGPaintOrder(const SkSVGPaintOrder&) = default;
+    SkSVGPaintOrder& operator=(const SkSVGPaintOrder&) = default;
+
+    bool operator==(const SkSVGPaintOrder& other) const { 
+        return fType == other.fType && fOrder == other.fOrder; 
+    }
+    bool operator!=(const SkSVGPaintOrder& other) const { return !(*this == other); }
+
+    Type type() const { return fType; }
+
+    const std::array<Component, 3>& order() const { 
+        SkASSERT(fType != Type::kInherit); // should never be called for unresolved values.
+        return fOrder; 
+    }
+
+private:
+    Type fType;
+    std::array<Component, 3> fOrder = {Component::kFill, Component::kStroke, Component::kMarkers};
 };
 
 class SK_API SkSVGVisibility {
