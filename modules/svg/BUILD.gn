@@ -40,6 +40,8 @@ if (skia_enable_svg && skia_use_expat) {
           "../..:flags",
           "../..:skia",
           "../..:tool_utils",
+          "../skshaper",
+          "../skunicode",
         ]
 
         public_deps = [ ":svg" ]

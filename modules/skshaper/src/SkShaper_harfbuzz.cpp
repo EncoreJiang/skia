@@ -830,7 +830,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
     const char* utf8End = utf8;
     SkUnicodeBreak lineBreakIterator;
     SkString currentLanguage;
-    while (runSegmenter.advanceRuns()) {  // For each item
+        while (runSegmenter.advanceRuns()) {  // For each item
         utf8Start = utf8End;
         utf8End = utf8 + runSegmenter.endOfCurrentRun();
 
@@ -1397,10 +1397,30 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     hb_glyph_info_t* info = hb_buffer_get_glyph_infos(buffer, nullptr);
     hb_glyph_position_t* pos = hb_buffer_get_glyph_positions(buffer, nullptr);
 
+    // Glyphs in the HarfBuzz buffer may include pre/post-context characters.
+    // Filter out glyphs whose clusters fall outside [utf8Start, utf8End) so that
+    // each shaped run only contains glyphs for the requested text range.
+    size_t startCluster = utf8Start - utf8;
+    size_t endCluster = utf8End - utf8;
+    unsigned keptCount = 0;
+    for (unsigned i = 0; i < len; i++) {
+        uint32_t cluster = info[i].cluster;
+        if (cluster >= startCluster && cluster < endCluster) {
+            ++keptCount;
+        }
+    }
+
+    if (keptCount == 0) {
+        // No glyphs in this buffer correspond to the requested text range;
+        // return the empty 'run' created earlier.
+        return run;
+    }
+
     run = ShapedRun(RunHandler::Range(utf8Start - utf8, utf8runLength),
                     font.currentFont(), bidi.currentLevel(),
                     script.currentScript(), language.currentLanguage(),
-                    std::unique_ptr<ShapedGlyph[]>(new ShapedGlyph[len]), len);
+                    std::unique_ptr<ShapedGlyph[]>(new ShapedGlyph[keptCount]),
+                    keptCount);
 
     // Undo skhb_position with (1.0/(1<<16)) and scale as needed.
     AutoSTArray<32, SkGlyphID> glyphIDs(len);
@@ -1414,10 +1434,17 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     double SkScalarFromHBPosX = +(1.52587890625e-5) * run.fFont.getScaleX();
     double SkScalarFromHBPosY = -(1.52587890625e-5);  // HarfBuzz y-up, Skia y-down
     SkVector runAdvance = { 0, 0 };
+    unsigned outIndex = 0;
     for (unsigned i = 0; i < len; i++) {
-        ShapedGlyph& glyph = run.fGlyphs[i];
+        uint32_t cluster = info[i].cluster;
+        if (cluster < startCluster || cluster >= endCluster) {
+            continue;
+        }
+
+        SkASSERT(outIndex < keptCount);
+        ShapedGlyph& glyph = run.fGlyphs[outIndex++];
         glyph.fID = info[i].codepoint;
-        glyph.fCluster = info[i].cluster;
+        glyph.fCluster = cluster;
         glyph.fOffset.fX = pos[i].x_offset * SkScalarFromHBPosX;
         glyph.fOffset.fY = pos[i].y_offset * SkScalarFromHBPosY;
         glyph.fAdvance.fX = pos[i].x_advance * SkScalarFromHBPosX;
@@ -1433,6 +1460,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
 
         runAdvance += glyph.fAdvance;
     }
+    SkASSERT(outIndex == keptCount);
     run.fAdvance = runAdvance;
 
     return run;

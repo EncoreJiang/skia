@@ -117,7 +117,6 @@ public:
         SkASSERT(fCurrent < fEnd);
         SkASSERT(!fLanguage || this->endOfCurrentRun() <= fLanguage->endOfCurrentRun());
         SkUnichar u = utf8_next(&fCurrent, fEnd);
-        printf("[FontSelection] FontMgrRunIterator::consume: processing char U+%04X %s\n", u, fCurrent);
         
         SkString primaryTypefaceName;
         if (fFont.getTypeface()) {
@@ -127,32 +126,45 @@ public:
         // If the starting typeface can handle this character, use it.
         if (fFont.unicharToGlyph(u)) {
             fCurrentFont = &fFont;
-            printf("[FontSelection] FontMgrRunIterator::consume: char U+%04X found in primary font '%s'\n",
-                   u, primaryTypefaceName.c_str());
         // If the current fallback can handle this character, use it.
         } else if (fFallbackFont.getTypeface() && fFallbackFont.unicharToGlyph(u)) {
             fCurrentFont = &fFallbackFont;
             SkString fallbackTypefaceName;
             fFallbackFont.getTypeface()->getFamilyName(&fallbackTypefaceName);
-            printf("[FontSelection] FontMgrRunIterator::consume: char U+%04X found in cached fallback font '%s'\n",
-                   u, fallbackTypefaceName.c_str());
         // If not, try to find a fallback typeface
         } else {
-            printf("[FontSelection] FontMgrRunIterator::consume: char U+%04X not found in primary font '%s', searching fallback\n",
-                   u, primaryTypefaceName.c_str());
             const char* language = fLanguage ? fLanguage->currentLanguage() : nullptr;
             int languageCount = fLanguage ? 1 : 0;
+            
+            // First try with requestName (SVG font-family)
             sk_sp<SkTypeface> candidate(fFallbackMgr->matchFamilyStyleCharacter(
                 fRequestName, fRequestStyle, &language, languageCount, u));
+            
+            // If that fails, try with nullptr (system default fallback) - like Chromium
+            if (!candidate) {
+                candidate = fFallbackMgr->matchFamilyStyleCharacter(
+                    nullptr, fRequestStyle, &language, languageCount, u);
+            }
+            
+            // If still fails, try without language constraints
+            if (!candidate && language) {
+                candidate = fFallbackMgr->matchFamilyStyleCharacter(
+                    nullptr, fRequestStyle, nullptr, 0, u);
+            }
+            
             if (candidate) {
                 fFallbackFont.setTypeface(std::move(candidate));
                 fCurrentFont = &fFallbackFont;
+                SkString candidateTypefaceName;
+                fFallbackFont.getTypeface()->getFamilyName(&candidateTypefaceName);
             } else {
+                // Even if no fallback found, we should still try to render with primary font
+                // The glyph might be missing but we don't want to skip the character
                 fCurrentFont = &fFont;
-                printf("[FontSelection] FontMgrRunIterator::consume: no fallback font found for char U+%04X, using primary font\n", u);
             }
         }
 
+        // Continue extending the run with consecutive characters that use the same font
         while (fCurrent < fEnd) {
             const char* prev = fCurrent;
             u = utf8_next(&fCurrent, fEnd);
@@ -169,27 +181,47 @@ public:
                 if (fCurrentFont->getTypeface()) {
                     fCurrentFont->getTypeface()->getFamilyName(&currentTypefaceName);
                 }
-                printf("[FontSelection] FontMgrRunIterator::consume: char U+%04X not found in current font '%s', checking for new fallback\n",
-                       u, currentTypefaceName.c_str());
                 const char* language = fLanguage ? fLanguage->currentLanguage() : nullptr;
                 int languageCount = fLanguage ? 1 : 0;
+                
+                // First try with requestName
                 sk_sp<SkTypeface> candidate(fFallbackMgr->matchFamilyStyleCharacter(
                     fRequestName, fRequestStyle, &language, languageCount, u));
+                
+                // If that fails, try with nullptr (system default)
+                if (!candidate) {
+                    candidate = fFallbackMgr->matchFamilyStyleCharacter(
+                        nullptr, fRequestStyle, &language, languageCount, u);
+                }
+                
+                // If still fails, try without language constraints
+                if (!candidate && language) {
+                    candidate = fFallbackMgr->matchFamilyStyleCharacter(
+                        nullptr, fRequestStyle, nullptr, 0, u);
+                }
+                
                 if (candidate) {
                     SkString candidateTypefaceName;
                     candidate->getFamilyName(&candidateTypefaceName);
-                    printf("[FontSelection] FontMgrRunIterator::consume: found new fallback font '%s' (uniqueID=%u) for char U+%04X, ending run\n",
-                           candidateTypefaceName.c_str(), candidate->uniqueID(), u);
+                    // End the current run before this character, so SkShaper will create a new run
+                    // with the new font for this character
                     fCurrent = prev;
                     return;
                 } else {
-                    printf("[FontSelection] FontMgrRunIterator::consume: no fallback font found for char U+%04X, continuing with current font\n", u);
+                    // Continue with current font even though it doesn't have the glyph
+                    // This allows the character to be rendered (possibly as missing glyph)
                 }
+            } else {
             }
         }
     }
     size_t endOfCurrentRun() const override {
-        return fCurrent - fBegin;
+        size_t end = fCurrent - fBegin;
+        SkString fontName;
+        if (fCurrentFont && fCurrentFont->getTypeface()) {
+            fCurrentFont->getTypeface()->getFamilyName(&fontName);
+        }
+        return end;
     }
     bool atEnd() const override {
         return fCurrent == fEnd;

@@ -94,21 +94,16 @@ static SkFont ResolveFont(const SkSVGRenderContext& ctx) {
             ctx.lengthContext().resolve(ctx.presentationContext().fInherited.fFontSize->size(),
                                         SkSVGLengthContext::LengthType::kVertical);
 
-    printf("[FontSelection] ResolveFont: family='%s', style=(weight=%d, width=%d, slant=%d), size=%.2f\n",
-           family.c_str(), style.weight(), style.width(), style.slant(), size);
-
     // TODO: we likely want matchFamilyStyle here, but switching away from legacyMakeTypeface
     // changes all the results when using the default fontmgr.
     auto tf = ctx.fontMgr()->legacyMakeTypeface(family.c_str(), style);
     if (!tf) {
-        printf("[FontSelection] ResolveFont: primary font lookup failed for family='%s', trying default\n", family.c_str());
         tf = ctx.fontMgr()->legacyMakeTypeface(nullptr, style);
     }
     SkASSERT(tf);
     if (tf) {
         SkString typefaceName;
         tf->getFamilyName(&typefaceName);
-        printf("[FontSelection] ResolveFont: selected typeface='%s' (uniqueID=%u)\n", typefaceName.c_str(), tf->uniqueID());
     }
     SkFont font(std::move(tf), size);
     font.setHinting(SkFontHinting::kNone);
@@ -257,24 +252,51 @@ void SkSVGTextContext::shapePendingBuffer(const SkSVGRenderContext& ctx, const S
     if (font.getTypeface()) {
         font.getTypeface()->getFamilyName(&typefaceName);
     }
-    printf("[FontSelection] shapePendingBuffer: text length=%zu, initial font='%s' (uniqueID=%u)\n",
-           utf8Bytes, typefaceName.c_str(), font.getTypeface() ? font.getTypeface()->uniqueID() : 0);
 
-    std::unique_ptr<SkShaper::FontRunIterator> font_runs =
-            SkShaper::MakeFontMgrRunIterator(utf8, utf8Bytes, font, ctx.fontMgr());
-    if (!font_runs) {
-        printf("[FontSelection] shapePendingBuffer: MakeFontMgrRunIterator returned null\n");
-        return;
+    // Get font family name and style for Chromium-like fallback
+    // Use the original SVG font-family (like Chromium uses CSS font-family)
+    // instead of the resolved typeface name for better fallback behavior
+    const auto& svgFamily = ctx.presentationContext().fInherited.fFontFamily->family();
+    const char* requestName = svgFamily.isEmpty() ? nullptr : svgFamily.c_str();
+    SkFontStyle requestStyle = font.getTypeface() ? font.getTypeface()->fontStyle() : SkFontStyle();
+    
+    if (requestName) {
+    } else {
+        // Fallback to resolved typeface name if SVG family is empty
+        if (font.getTypeface()) {
+            requestName = typefaceName.c_str();
+            requestStyle = font.getTypeface()->fontStyle();
+        }
     }
-    printf("[FontSelection] shapePendingBuffer: FontRunIterator created successfully\n");
+
+    // Create language iterator first (needed for advanced MakeFontMgrRunIterator)
+    // This will be reused for shaping if advanced font iterator is used
+    std::unique_ptr<SkShaper::LanguageRunIterator> language =
+            SkShaper::MakeStdLanguageRunIterator(utf8, utf8Bytes);
+
+    // Use Chromium-like font fallback with requestName and language
+    // This provides better fallback behavior similar to Chromium
+    std::unique_ptr<SkShaper::FontRunIterator> font_runs;
+    if (requestName && language) {
+        font_runs = SkShaper::MakeFontMgrRunIterator(utf8, utf8Bytes, font, ctx.fontMgr(),
+                                                     requestName, requestStyle, language.get());
+    }
+    
+    // Fallback to simple version if advanced version failed or not available
+    if (!font_runs) {
+        font_runs = SkShaper::MakeFontMgrRunIterator(utf8, utf8Bytes, font, ctx.fontMgr());
+        // Reset language iterator for reuse in shaping
+        language = SkShaper::MakeStdLanguageRunIterator(utf8, utf8Bytes);
+    }
+    
+    
     if (!fForcePrimitiveShaping) {
         // Try to use the passed in shaping callbacks to shape, for example, using harfbuzz and ICU.
         const uint8_t defaultLTR = 0;
         std::unique_ptr<SkShaper::BiDiRunIterator> bidi =
                 ctx.makeBidiRunIterator(utf8, utf8Bytes, defaultLTR);
-        std::unique_ptr<SkShaper::LanguageRunIterator> language =
-                SkShaper::MakeStdLanguageRunIterator(utf8, utf8Bytes);
         std::unique_ptr<SkShaper::ScriptRunIterator> script = ctx.makeScriptRunIterator(utf8, utf8Bytes);
+
 
         if (bidi && script && language) {
             fShaper->shape(utf8,
@@ -523,6 +545,11 @@ void SkSVGTextContext::flushChunk(const SkSVGRenderContext& ctx) {
 SkShaper::RunHandler::Buffer SkSVGTextContext::runBuffer(const RunInfo& ri) {
     SkASSERT(ri.glyphCount);
 
+    SkString fontName;
+    if (ri.fFont.getTypeface()) {
+        ri.fFont.getTypeface()->getFamilyName(&fontName);
+    }
+
     fRuns.push_back({
         ri.fFont,
         fCurrentFill.has_value()   ? std::make_unique<SkPaint>(*fCurrentFill)   : nullptr,
@@ -649,9 +676,6 @@ void SkSVGText::onRender(const SkSVGRenderContext& ctx) const {
     if (paintOrder.isValue() && paintOrder->type() != SkSVGPaintOrder::Type::kInherit) {
         order = paintOrder->order();
     }
-    printf("paintOrder: %d\n", order[0]);
-    printf("paintOrder: %d\n", order[1]);
-    printf("paintOrder: %d\n", order[2]);
 
     const SkSVGTextContext::ShapedTextCallback render_text = [order](const SkSVGRenderContext& ctx,
                                                                 const sk_sp<SkTextBlob>& blob,
@@ -675,7 +699,6 @@ void SkSVGText::onRender(const SkSVGRenderContext& ctx) const {
 }
 
 SkRect SkSVGText::onTransformableObjectBoundingBox(const SkSVGRenderContext& ctx) const {
-    printf("onTransformableObjectBoundingBox\n");
     SkRect bounds = SkRect::MakeEmpty();
 
     const SkSVGTextContext::ShapedTextCallback compute_bounds =
