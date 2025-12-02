@@ -15,13 +15,11 @@
 
 #include "src/core/SkFontDescriptor.h"
 #include "src/ports/SkFontMgr_custom.h"
-#include "src/ports/SkTypeface_FreeType.h"
 #include "src/ports/SkTypeface_proxy.h"
 
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
-#include "include/ports/SkFontScanner_FreeType.h"
 #include "include/private/base/SkThreadAnnotations.h"
 #include "src/core/SkTypefaceCache.h"
 
@@ -526,11 +524,6 @@ sk_sp<SkTypeface> SkFontMgr_Fuchsia::GetOrCreateTypeface(TypefaceId id,
     return result;
 }
 
-sk_sp<SkFontMgr> SkFontMgr_New_Fuchsia(fuchsia::fonts::ProviderSyncPtr provider) {
-    return sk_make_sp<SkFontMgr_Fuchsia>(std::move(provider), SkFontScanner_Make_FreeType());
-}
-
-// TODO: Remove the default FreeType scanner and remove the dependency on it (after we fix all the calls)
 sk_sp<SkFontMgr> SkFontMgr_New_Fuchsia(fuchsia::fonts::ProviderSyncPtr provider, std::unique_ptr<SkFontScanner> scanner) {
     return sk_make_sp<SkFontMgr_Fuchsia>(std::move(provider), std::move(scanner));
 }
